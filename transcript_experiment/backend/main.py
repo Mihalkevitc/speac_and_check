@@ -118,6 +118,7 @@ def _sync_transcribe(save_path):
         beam_size=1,
         word_timestamps=True,
         vad_filter=False,  # для CPU лучше False - VAD добавляет оверхед
+        condition_on_previous_text=False
     )
     return list(segments), info
 
