@@ -2,67 +2,469 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Speak and Check — Прототип</title>
+    <title>Speak and Check</title>
+    <!-- Подключаем Chart.js, Hammer.js (для жестов) и плагин зума -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
-        button { padding: 12px 24px; font-size: 16px; margin: 5px; cursor: pointer; }
-        #status { margin: 20px 0; color: #666; }
-        #result { margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 8px; white-space: pre-wrap; }
+        /* Базовые настройки и сброс */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            max-width: 760px; 
+            margin: 40px auto; 
+            padding: 0 20px; 
+            background-color: #fafafa; 
+            color: #111827; 
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.5px; margin-bottom: 8px; }
+        h3 { font-size: 18px; font-weight: 600; margin-bottom: 12px; }
+        p { color: #6b7280; font-size: 15px; margin-bottom: 24px; }
+
+        .controls { display: flex; gap: 12px; margin-bottom: 24px; }
+        button { 
+            padding: 10px 20px; font-size: 14px; font-weight: 500; cursor: pointer; 
+            border: 1px solid transparent; border-radius: 8px; transition: all 0.2s ease;
+            display: inline-flex; align-items: center; justify-content: center;
+        }
+        .btn-primary { background-color: #111827; color: white; }
+        .btn-primary:hover { background-color: #374151; }
+        .btn-secondary { background-color: white; color: #111827; border-color: #e5e7eb; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        .btn-secondary:hover { background-color: #f3f4f6; border-color: #d1d5db; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
 
         #dropZone {
-            margin-top: 20px;
-            padding: 30px;
-            border: 2px dashed #aaa;
-            border-radius: 10px;
-            text-align: center;
-            color: #666;
-            cursor: pointer;
-            transition: background 0.15s, border-color 0.15s;
+            padding: 40px 20px; border: 1px dashed #d1d5db; border-radius: 12px; text-align: center;
+            color: #6b7280; cursor: pointer; transition: all 0.2s ease; background-color: #ffffff; margin-bottom: 24px;
         }
-        #dropZone.dragover { background: #eef6ff; border-color: #3b82f6; color: #1e3a8a; }
+        #dropZone:hover { border-color: #9ca3af; background-color: #f9fafb; }
+        #dropZone.dragover { border-color: #111827; background-color: #f3f4f6; color: #111827; }
         #dropZone.loading { opacity: 0.6; pointer-events: none; }
-        #fileInput { display: none; }
+
+        #status { font-size: 14px; font-weight: 500; color: #111827; margin-bottom: 16px; }
+        #status.recording { color: #ef4444; }
+        #error { color: #ef4444; font-size: 14px; margin-bottom: 16px; }
+
+        .card { 
+            background: white; padding: 24px; border-radius: 12px; border: 1px solid #e5e7eb;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02); margin-bottom: 20px; 
+        }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+
+        .chart-scroll-wrapper { 
+            overflow: auto; max-height: 500px; padding-bottom: 10px;
+            border: 1px solid #f3f4f6; border-radius: 8px; scrollbar-width: thin;
+        }
+        .chart-scroll-wrapper::-webkit-scrollbar { width: 8px; height: 8px; }
+        .chart-scroll-wrapper::-webkit-scrollbar-track { background: transparent; }
+        .chart-scroll-wrapper::-webkit-scrollbar-thumb { background-color: #d1d5db; border-radius: 4px; }
+        .chart-scroll-wrapper::-webkit-scrollbar-thumb:hover { background-color: #9ca3af; }
+
+        #chartContainer { position: relative; }
+
+        #result { 
+            white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; 
+            font-size: 15px; color: #374151; line-height: 1.6; max-height: 220px; overflow-y: auto; padding-right: 10px;
+        }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background-color: #d1d5db; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background-color: #9ca3af; }
+
+        .metric-label { font-size: 12px; font-weight: 500; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+        .metric { font-size: 28px; font-weight: 600; color: #111827; letter-spacing: -0.5px; }
+        .metric-sub { font-size: 13px; color: #9ca3af; }
+
+        /* Кнопка-иконка (минималистичная) */
+        .btn-icon {
+            background: transparent; border: none; color: #6b7280; padding: 6px; cursor: pointer;
+            border-radius: 6px; transition: background 0.2s, color 0.2s;
+            display: inline-flex; align-items: center; justify-content: center;
+        }
+        .btn-icon:hover { background: #f3f4f6; color: #111827; }
+
+        /* Стили для полноэкранного режима */
+        #fullscreenModal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #ffffff;
+            z-index: 9999;
+            padding: 20px;
+            flex-direction: column;
+        }
+        #fullscreenModal.active {
+            display: flex;
+        }
+        #fullscreenModal .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            flex-shrink: 0;
+        }
+        #fullscreenModal .modal-header h3 {
+            margin: 0;
+            font-size: 18px;
+        }
+        #fullscreenChartWrapper {
+            flex: 1;
+            position: relative;
+            overflow: hidden; /* Важно для зума */
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+        
+        /* Кнопка закрытия */
+        .btn-close {
+            background: #f3f4f6; color: #374151; border: none; padding: 8px 16px;
+            border-radius: 6px; cursor: pointer; font-weight: 500; transition: background 0.2s;
+        }
+        .btn-close:hover { background: #e5e7eb; }
+        
+        /* Подсказка про зум */
+        .zoom-hint {
+            font-size: 12px; color: #9ca3af; margin-top: 8px; text-align: center; flex-shrink: 0;
+        }
+        
+        /* Иконки */
+        svg { width: 20px; height: 20px; fill: currentColor; }
     </style>
 </head>
 <body>
     <h1>Speak and Check</h1>
     <p>Запишите голос или перетащите готовый аудиофайл.</p>
 
-    <div>
-        <button id="recordBtn">🎤 Записать</button>
-        <button id="stopBtn" disabled>⏹ Стоп и отправить</button>
+    <div class="controls">
+        <button id="recordBtn" class="btn-primary">🎤 Записать</button>
+        <button id="stopBtn" class="btn-secondary" disabled>⏹ Стоп и отправить</button>
     </div>
 
     <div id="dropZone">
-        <div>📁 Перетащите аудиофайл сюда</div>
-        <div style="font-size: 13px; margin-top: 6px;">или нажмите, чтобы выбрать</div>
-        <input type="file" id="fileInput" accept="audio/*">
+        <div style="font-size: 24px; margin-bottom: 8px;">📁</div>
+        <div>Перетащите аудиофайл сюда</div>
+        <div style="font-size: 13px; margin-top: 4px; color: #9ca3af;">или нажмите, чтобы выбрать</div>
+        <input type="file" id="fileInput" accept="audio/*" style="display: none;">
     </div>
 
     <div id="status"></div>
-    <div id="result"></div>
+    <div id="error"></div>
+
+    <div id="resultContainer" style="display: none;">
+        <div class="grid">
+            <div class="card">
+                <div class="metric-label">Скорость речи</div>
+                <div class="metric" id="metricWpm">-</div>
+                <div class="metric-sub">слов / мин</div>
+            </div>
+            <div class="card">
+                <div class="metric-label">Паузы > 0.5с</div>
+                <div class="metric" id="metricPauses">-</div>
+                <div class="metric-sub">секунд молчания</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Транскрипт</h3>
+            <div id="result"></div>
+        </div>
+
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 style="margin: 0;">Таймлайн речи</h3>
+                <!-- Минималистичная кнопка с иконкой -->
+                <button id="fullscreenBtn" class="btn-icon" title="На весь экран">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+                    </svg>
+                </button>
+            </div>
+            <p style="margin-bottom: 12px; font-size: 13px;">Зелёные блоки - слова. Красные - паузы.</p>
+            
+            <div class="chart-scroll-wrapper">
+                <div id="chartContainer">
+                    <canvas id="timelineChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Полноэкранное модальное окно -->
+    <div id="fullscreenModal">
+        <div class="modal-header">
+            <h3>Таймлайн речи</h3>
+            <button id="closeFullscreenBtn" class="btn-close">✕ Закрыть</button>
+        </div>
+        <div id="fullscreenChartWrapper">
+            <canvas id="fullscreenChart"></canvas>
+        </div>
+        <div class="zoom-hint">Колесо мыши - зум по времени. Зажмите мышь - перемещение.</div>
+    </div>
 
     <script>
         let mediaRecorder;
         let audioChunks = [];
         let stream;
+        let myChart = null;
+        let fullscreenChart = null;
+        let currentWordsData = null;
+        let currentDuration = 0;
 
         const recordBtn = document.getElementById('recordBtn');
         const stopBtn = document.getElementById('stopBtn');
         const statusDiv = document.getElementById('status');
         const resultDiv = document.getElementById('result');
+        const errorDiv = document.getElementById('error');
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
+        const resultContainer = document.getElementById('resultContainer');
+        const chartContainer = document.getElementById('chartContainer');
+        const fullscreenModal = document.getElementById('fullscreenModal');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const closeFullscreenBtn = document.getElementById('closeFullscreenBtn');
+        const fullscreenChartWrapper = document.getElementById('fullscreenChartWrapper');
 
-        // -------- общая функция отправки на сервер --------
+        // -------- Подготовка данных для графика --------
+        function prepareChartData(words) {
+            const labels = [];
+            const data = [];
+            const colors = [];
+            const tooltips = [];
+
+            for (let i = 0; i < words.length; i++) {
+                const w = words[i];
+                
+                if (i > 0) {
+                    const prevW = words[i - 1];
+                    const gap = w.start - prevW.end;
+                    
+                    if (gap >= 0.5) {
+                        labels.push('Пауза');
+                        data.push([prevW.end, w.start]);
+                        colors.push('#ef4444'); 
+                        tooltips.push(`Пауза: ${gap.toFixed(2)} сек`);
+                    }
+                } else if (w.start >= 0.5) {
+                    labels.push('Пауза');
+                    data.push([0, w.start]);
+                    colors.push('#ef4444');
+                    tooltips.push(`Пауза в начале: ${w.start.toFixed(2)} сек`);
+                }
+
+                labels.push(w.word);
+                data.push([w.start, w.end]);
+                colors.push('#10b981');
+                tooltips.push(`"${w.word}" (${w.start.toFixed(2)} - ${w.end.toFixed(2)})`);
+            }
+            return { labels, data, colors, tooltips };
+        }
+
+        // -------- Отрисовка обычного графика --------
+        function drawChart(words, totalDuration) {
+            currentWordsData = words;
+            currentDuration = totalDuration;
+
+            const ctx = document.getElementById('timelineChart').getContext('2d');
+            if (myChart) myChart.destroy();
+
+            const pixelsPerSecond = 35; 
+            const calculatedWidth = Math.max(totalDuration * pixelsPerSecond, 900); 
+            chartContainer.style.width = `${calculatedWidth}px`;
+
+            const { labels, data, colors, tooltips } = prepareChartData(words);
+
+            const minRowHeight = 30; 
+            const calculatedHeight = Math.max(labels.length * minRowHeight, 300); 
+            chartContainer.style.height = `${calculatedHeight}px`;
+
+            myChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: colors,
+                        borderWidth: 0,
+                        borderRadius: 3,
+                        barPercentage: 0.85
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false, 
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#111827',
+                            titleFont: { size: 13 },
+                            bodyFont: { size: 13 },
+                            padding: 10,
+                            cornerRadius: 6,
+                            callbacks: {
+                                label: function(context) {
+                                    return tooltips[context.dataIndex];
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            min: 0,
+                            max: totalDuration,
+                            grid: { color: '#f3f4f6', drawBorder: false },
+                            ticks: { color: '#9ca3af', font: { size: 12 } }
+                        },
+                        y: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+
+        // -------- Открытие полноэкранного графика с зумом --------
+        function openFullscreenChart() {
+            if (!currentWordsData) return;
+
+            // 1. Запрашиваем НАТИВНЫЙ полноэкранный режим у браузера
+            if (fullscreenModal.requestFullscreen) {
+                fullscreenModal.requestFullscreen();
+            } else if (fullscreenModal.webkitRequestFullscreen) { /* Safari */
+                fullscreenModal.webkitRequestFullscreen();
+            } else if (fullscreenModal.msRequestFullscreen) { /* IE11 */
+                fullscreenModal.msRequestFullscreen();
+            }
+
+            // 2. Показываем модалку
+            fullscreenModal.classList.add('active');
+
+            const ctx = document.getElementById('fullscreenChart').getContext('2d');
+            if (fullscreenChart) fullscreenChart.destroy();
+
+            const { labels, data, colors, tooltips } = prepareChartData(currentWordsData);
+
+            // Настраиваем высоту под весь экран
+            fullscreenChartWrapper.style.height = `calc(100vh - 120px)`; // 120px оставляем на шапку и подсказку
+
+            fullscreenChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: colors,
+                        borderWidth: 0,
+                        borderRadius: 3,
+                        barPercentage: 0.85
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#111827',
+                            titleFont: { size: 13 },
+                            bodyFont: { size: 13 },
+                            padding: 10,
+                            cornerRadius: 6,
+                            callbacks: {
+                                label: function(context) {
+                                    return tooltips[context.dataIndex];
+                                }
+                            }
+                        },
+                        zoom: {
+                            pan: {
+                                enabled: true,
+                                mode: 'x', // Только по горизонтали
+                            },
+                            zoom: {
+                                wheel: {
+                                    enabled: true,
+                                    speed: 0.05,
+                                },
+                                pinch: {
+                                    enabled: true
+                                },
+                                mode: 'x', // Только по оси X, чтобы не плющило Y
+                            },
+                            limits: {
+                                x: { min: 0, max: currentDuration }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            min: 0,
+                            max: currentDuration,
+                            grid: { color: '#f3f4f6', drawBorder: false },
+                            ticks: { color: '#9ca3af', font: { size: 12 } }
+                        },
+                        y: {
+                            display: false,
+                            // Фиксируем высоту строки, чтобы при зуме по X 
+                            // блоки не становились микроскопическими
+                            barThickness: 25 
+                        }
+                    }
+                }
+            });
+        }
+
+        function closeFullscreenChart() {
+            // Выходим из нативного полноэкранного режима
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) { /* Safari */
+                document.webkitExitFullscreen();
+            } else if (document.msExitFullscreen) { /* IE11 */
+                document.msExitFullscreen();
+            }
+
+            fullscreenModal.classList.remove('active');
+            if (fullscreenChart) {
+                fullscreenChart.destroy();
+                fullscreenChart = null;
+            }
+        }
+
+        fullscreenBtn.onclick = openFullscreenChart;
+        closeFullscreenBtn.onclick = closeFullscreenChart;
+
+        // Закрытие по Esc (и по выходу из нативного фуллскрина)
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && fullscreenModal.classList.contains('active')) {
+                closeFullscreenChart();
+            }
+        });
+
+        // Слушаем событие выхода из нативного фуллскрина (если юзер нажал F11 или Esc в браузере)
+        document.addEventListener('fullscreenchange', () => {
+            if (!document.fullscreenElement && fullscreenModal.classList.contains('active')) {
+                closeFullscreenChart();
+            }
+        });
+
+        // -------- Отправка на сервер --------
         async function sendAudio(blob, filename) {
             statusDiv.textContent = "Отправка на сервер...";
-            resultDiv.textContent = "";
+            statusDiv.classList.remove('recording');
+            resultContainer.style.display = "none";
+            errorDiv.textContent = "";
 
             const formData = new FormData();
             formData.append('file', blob, filename);
-
-            const t0 = performance.now();
 
             try {
                 const response = await fetch('http://localhost:8000/transcribe', {
@@ -70,41 +472,39 @@
                     body: formData
                 });
 
-                const t1 = performance.now();
-                const clientTime = ((t1 - t0) / 1000).toFixed(2);
-
                 if (!response.ok) {
                     const err = await response.json();
                     throw new Error(err.detail || 'Ошибка сервера');
                 }
 
                 const data = await response.json();
-                const t = data.timings || {};
                 const f = data.fluency || {};
+                const t = data.timings || {};
+
+                document.getElementById('metricWpm').textContent = f.words_per_minute ?? '-';
+                document.getElementById('metricPauses').textContent = f.pauses_total_s ?? '-';
 
                 resultDiv.textContent =
-                    `Транскрипт:\n\n${data.text}\n\n` +
-                    `Аудио: ${data.duration} сек | Файл: ${data.size_kb} KB\n` +
-                    `Сохранено как: ${data.saved_as}\n\n` +
-                    `Беглость речи:\n` +
-                    `  слов: ${f.words_count ?? '?'}\n` +
-                    `  скорость: ${f.words_per_minute ?? '?'} слов/мин\n` +
-                    `  паузы > 0.5 с: ${f.pauses_count ?? '?'} (суммарно ${f.pauses_total_s ?? '?'} с)\n` +
-                    `  средняя пауза: ${f.avg_pause_s ?? '?'} с\n\n` +
-                    `Тайминги (сервер):\n` +
-                    `  сохранение: ${t.save_ms ?? '?'} мс\n` +
-                    `  транскрибация: ${t.transcribe_s ?? '?'} с\n` +
-                    `  всего на сервере: ${t.total_s ?? '?'} с\n` +
-                    `Клиент (от клика до ответа): ${clientTime} с`;
+                    `${data.text}\n\n` +
+                    `--- Детали ---\n` +
+                    `Слов: ${f.words_count ?? '?'}\n` +
+                    `Ср. пауза: ${f.avg_pause_s ?? '?'} с\n` +
+                    `Аудио: ${data.duration} сек\n` +
+                    `Время обработки: ${t.total_s ?? '?'} с`;
 
-                statusDiv.textContent = "Готово!";
+                if (data.words_data && data.words_data.length > 0) {
+                    drawChart(data.words_data, data.duration);
+                }
+
+                resultContainer.style.display = "block";
+                statusDiv.textContent = "Готово";
+
             } catch (error) {
-                resultDiv.textContent = "Ошибка: " + error.message;
+                errorDiv.textContent = "Ошибка: " + error.message;
                 statusDiv.textContent = "";
             }
         }
 
-        // -------- запись с микрофона --------
         recordBtn.onclick = async () => {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -122,8 +522,7 @@
                     const mime = mediaRecorder.mimeType || 'audio/webm';
                     let ext = 'webm';
                     if (mime.includes('mp4')) ext = 'mp4';
-                    else if (mime.includes('ogg')) ext = 'ogg';
-
+                    
                     const audioBlob = new Blob(audioChunks, { type: mime });
                     await sendAudio(audioBlob, `recording.${ext}`);
                     recordBtn.disabled = false;
@@ -133,10 +532,11 @@
                 recordBtn.disabled = true;
                 stopBtn.disabled = false;
                 statusDiv.textContent = "🔴 Идёт запись...";
-                resultDiv.textContent = "";
+                statusDiv.classList.add('recording');
+                errorDiv.textContent = "";
 
             } catch (error) {
-                statusDiv.textContent = "Не удалось получить доступ к микрофону: " + error.message;
+                errorDiv.textContent = "Не удалось получить доступ к микрофону: " + error.message;
             }
         };
 
@@ -144,51 +544,44 @@
             if (mediaRecorder && mediaRecorder.state === 'recording') {
                 mediaRecorder.stop();
                 statusDiv.textContent = "Обработка...";
+                statusDiv.classList.remove('recording');
             }
         };
 
-        // -------- drag-and-drop --------
         dropZone.onclick = () => fileInput.click();
 
         fileInput.onchange = () => {
-            if (fileInput.files.length > 0) {
-                handleFile(fileInput.files[0]);
-            }
+            if (fileInput.files.length > 0) handleFile(fileInput.files[0]);
         };
 
         ['dragenter', 'dragover'].forEach(evt => {
             dropZone.addEventListener(evt, e => {
-                e.preventDefault();
-                e.stopPropagation();
+                e.preventDefault(); e.stopPropagation();
                 dropZone.classList.add('dragover');
             });
         });
 
         ['dragleave', 'drop'].forEach(evt => {
             dropZone.addEventListener(evt, e => {
-                e.preventDefault();
-                e.stopPropagation();
+                e.preventDefault(); e.stopPropagation();
                 dropZone.classList.remove('dragover');
             });
         });
 
         dropZone.addEventListener('drop', e => {
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                handleFile(files[0]);
-            }
+            if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
         });
 
         async function handleFile(file) {
             if (!file.type.startsWith('audio/')) {
-                statusDiv.textContent = "Это не аудиофайл: " + file.name;
+                errorDiv.textContent = "Это не аудиофайл: " + file.name;
                 return;
             }
             dropZone.classList.add('loading');
-            dropZone.querySelector('div').textContent = "⏳ Обработка: " + file.name;
+            dropZone.querySelector('div:nth-child(2)').textContent = "⏳ Обработка: " + file.name;
             await sendAudio(file, file.name);
             dropZone.classList.remove('loading');
-            dropZone.querySelector('div').textContent = "📁 Перетащите аудиофайл сюда";
+            dropZone.querySelector('div:nth-child(2)').textContent = "Перетащите аудиофайл сюда";
         }
     </script>
 </body>
