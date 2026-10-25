@@ -182,6 +182,17 @@ async def transcribe(request: Request, file: UploadFile = File(...)):
             text = " ".join(s.text for s in segments_list).strip()
             fluency = analyze_fluency(segments_list, info.duration)
 
+            # Собираем слова для графика
+            words_data = []
+            for seg in segments_list:
+                if seg.words:
+                    for w in seg.words:
+                        words_data.append({
+                            "word": w.word.strip(),
+                            "start": round(w.start, 2),
+                            "end": round(w.end, 2)
+                        })
+
             t_done = time.perf_counter()
             transcribe_time = t_done - t_saved
             total_time = t_done - t_start
@@ -198,6 +209,7 @@ async def transcribe(request: Request, file: UploadFile = File(...)):
                 "saved_as": filename,
                 "size_kb": round(size_kb, 1),
                 "fluency": fluency,
+                "words_data": words_data,
                 "timings": {
                     "save_ms": round(save_time * 1000),
                     "transcribe_s": round(transcribe_time, 2),
