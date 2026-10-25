@@ -3,28 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <title>Speak and Check</title>
-    <!-- Подключаем Chart.js, Hammer.js (для жестов) и плагин зума -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
     <style>
-        /* Базовые настройки и сброс */
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
-            max-width: 760px; 
-            margin: 40px auto; 
-            padding: 0 20px; 
-            background-color: #fafafa; 
-            color: #111827; 
-            line-height: 1.5;
-            -webkit-font-smoothing: antialiased;
+            max-width: 760px; margin: 40px auto; padding: 0 20px; 
+            background-color: #fafafa; color: #111827; line-height: 1.5; -webkit-font-smoothing: antialiased;
         }
-
         h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.5px; margin-bottom: 8px; }
         h3 { font-size: 18px; font-weight: 600; margin-bottom: 12px; }
         p { color: #6b7280; font-size: 15px; margin-bottom: 24px; }
-
         .controls { display: flex; gap: 12px; margin-bottom: 24px; }
         button { 
             padding: 10px 20px; font-size: 14px; font-weight: 500; cursor: pointer; 
@@ -36,7 +27,7 @@
         .btn-secondary { background-color: white; color: #111827; border-color: #e5e7eb; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
         .btn-secondary:hover { background-color: #f3f4f6; border-color: #d1d5db; }
         button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
-
+        
         #dropZone {
             padding: 40px 20px; border: 1px dashed #d1d5db; border-radius: 12px; text-align: center;
             color: #6b7280; cursor: pointer; transition: all 0.2s ease; background-color: #ffffff; margin-bottom: 24px;
@@ -49,14 +40,12 @@
         #status.recording { color: #ef4444; }
         #error { color: #ef4444; font-size: 14px; margin-bottom: 16px; }
 
-        .card { 
-            background: white; padding: 24px; border-radius: 12px; border: 1px solid #e5e7eb;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.02); margin-bottom: 20px; 
-        }
+        .card { background: white; padding: 24px; border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,0.02); margin-bottom: 20px; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
 
         .chart-scroll-wrapper { 
-            overflow: auto; max-height: 500px; padding-bottom: 10px;
+            overflow: auto; max-height: 450px; padding-bottom: 10px; 
             border: 1px solid #f3f4f6; border-radius: 8px; scrollbar-width: thin;
         }
         .chart-scroll-wrapper::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -64,13 +53,12 @@
         .chart-scroll-wrapper::-webkit-scrollbar-thumb { background-color: #d1d5db; border-radius: 4px; }
         .chart-scroll-wrapper::-webkit-scrollbar-thumb:hover { background-color: #9ca3af; }
 
-        #chartContainer { position: relative; }
+        #combinedChartContainer { position: relative; height: 300px; }
+        #timelineContainer { position: relative; }
+        .mini-chart-container { position: relative; height: 220px; width: 100%; }
 
-        #result { 
-            white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; 
-            font-size: 15px; color: #374151; line-height: 1.6; max-height: 220px; overflow-y: auto; padding-right: 10px;
-        }
-
+        #result { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 15px; color: #374151; line-height: 1.6; max-height: 220px; overflow-y: auto; padding-right: 10px; }
+        
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background-color: #d1d5db; border-radius: 4px; }
@@ -80,60 +68,19 @@
         .metric { font-size: 28px; font-weight: 600; color: #111827; letter-spacing: -0.5px; }
         .metric-sub { font-size: 13px; color: #9ca3af; }
 
-        /* Кнопка-иконка (минималистичная) */
-        .btn-icon {
-            background: transparent; border: none; color: #6b7280; padding: 6px; cursor: pointer;
-            border-radius: 6px; transition: background 0.2s, color 0.2s;
-            display: inline-flex; align-items: center; justify-content: center;
-        }
+        .btn-icon { background: transparent; border: none; color: #6b7280; padding: 6px; cursor: pointer; border-radius: 6px; transition: background 0.2s, color 0.2s; display: inline-flex; align-items: center; justify-content: center; }
         .btn-icon:hover { background: #f3f4f6; color: #111827; }
 
-        /* Стили для полноэкранного режима */
-        #fullscreenModal {
-            display: none;
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: #ffffff;
-            z-index: 9999;
-            padding: 20px;
-            flex-direction: column;
-        }
-        #fullscreenModal.active {
-            display: flex;
-        }
-        #fullscreenModal .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 16px;
-            flex-shrink: 0;
-        }
-        #fullscreenModal .modal-header h3 {
-            margin: 0;
-            font-size: 18px;
-        }
-        #fullscreenChartWrapper {
-            flex: 1;
-            position: relative;
-            overflow: hidden; /* Важно для зума */
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-        }
-        
-        /* Кнопка закрытия */
-        .btn-close {
-            background: #f3f4f6; color: #374151; border: none; padding: 8px 16px;
-            border-radius: 6px; cursor: pointer; font-weight: 500; transition: background 0.2s;
-        }
+        .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #ffffff; z-index: 9999; padding: 20px; flex-direction: column; }
+        .modal.active { display: flex; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-shrink: 0; }
+        .modal-header h3 { margin: 0; font-size: 18px; }
+        .modal-chart-wrapper { flex: 1; position: relative; overflow: hidden; border: 1px solid #e5e7eb; border-radius: 8px; }
+        .btn-close { background: #f3f4f6; color: #374151; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 500; transition: background 0.2s; }
         .btn-close:hover { background: #e5e7eb; }
-        
-        /* Подсказка про зум */
-        .zoom-hint {
-            font-size: 12px; color: #9ca3af; margin-top: 8px; text-align: center; flex-shrink: 0;
-        }
-        
-        /* Иконки */
+        .zoom-hint { font-size: 12px; color: #9ca3af; margin-top: 8px; text-align: center; flex-shrink: 0; }
         svg { width: 20px; height: 20px; fill: currentColor; }
+        @media (max-width: 600px) { .grid, .charts-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
@@ -174,46 +121,78 @@
             <div id="result"></div>
         </div>
 
+        <!-- ГРАФИК 1: Объединенный -->
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 style="margin: 0;">Анализ речи</h3>
+                <button id="combinedFullscreenBtn" class="btn-icon" title="На весь экран">
+                    <svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+                </button>
+            </div>
+            <p style="margin-bottom: 12px; font-size: 13px;">
+                <span style="display:inline-block; width:10px; height:10px; background:rgba(16, 185, 129, 0.3); margin-right:4px;"></span>Слова 
+                <span style="display:inline-block; width:10px; height:10px; background:rgba(239, 68, 68, 0.3); margin-left:12px; margin-right:4px;"></span>Паузы
+                <span style="display:inline-block; width:10px; height:2px; background:#3b82f6; margin-left:12px; margin-right:4px;"></span>Громкость
+            </p>
+            <div class="chart-scroll-wrapper">
+                <div id="combinedChartContainer">
+                    <canvas id="combinedChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- ГРАФИК 2: Таймлайн -->
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                 <h3 style="margin: 0;">Таймлайн речи</h3>
-                <!-- Минималистичная кнопка с иконкой -->
-                <button id="fullscreenBtn" class="btn-icon" title="На весь экран">
-                    <svg viewBox="0 0 24 24">
-                        <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
-                    </svg>
+                <button id="timelineFullscreenBtn" class="btn-icon" title="На весь экран">
+                    <svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
                 </button>
             </div>
             <p style="margin-bottom: 12px; font-size: 13px;">Зелёные блоки - слова. Красные - паузы.</p>
-            
             <div class="chart-scroll-wrapper">
-                <div id="chartContainer">
+                <div id="timelineContainer">
                     <canvas id="timelineChart"></canvas>
                 </div>
             </div>
         </div>
+        
+        <div class="charts-grid">
+            <div class="card">
+                <h3>Речь vs Молчание</h3>
+                <div class="mini-chart-container"><canvas id="pieChart"></canvas></div>
+            </div>
+            <div class="card">
+                <h3>Длительность пауз</h3>
+                <div class="mini-chart-container"><canvas id="barChart"></canvas></div>
+            </div>
+        </div>
     </div>
 
-    <!-- Полноэкранное модальное окно -->
-    <div id="fullscreenModal">
+    <div id="combinedModal" class="modal">
+        <div class="modal-header">
+            <h3>Анализ речи</h3>
+            <button id="closeCombinedFullscreenBtn" class="btn-close">✕ Закрыть</button>
+        </div>
+        <div class="modal-chart-wrapper"><canvas id="fullscreenCombinedChart"></canvas></div>
+        <div class="zoom-hint">Колесо мыши - зум по времени. Зажмите мышь - перемещение.</div>
+    </div>
+
+    <div id="timelineModal" class="modal">
         <div class="modal-header">
             <h3>Таймлайн речи</h3>
-            <button id="closeFullscreenBtn" class="btn-close">✕ Закрыть</button>
+            <button id="closeTimelineFullscreenBtn" class="btn-close">✕ Закрыть</button>
         </div>
-        <div id="fullscreenChartWrapper">
-            <canvas id="fullscreenChart"></canvas>
-        </div>
+        <div class="modal-chart-wrapper"><canvas id="fullscreenTimeline"></canvas></div>
         <div class="zoom-hint">Колесо мыши - зум по времени. Зажмите мышь - перемещение.</div>
     </div>
 
     <script>
-        let mediaRecorder;
-        let audioChunks = [];
-        let stream;
-        let myChart = null;
-        let fullscreenChart = null;
-        let currentWordsData = null;
-        let currentDuration = 0;
+        let mediaRecorder, audioChunks = [], stream;
+        let combinedChart = null, fullscreenCombinedChart = null;
+        let timelineChart = null, fullscreenTimelineChart = null;
+        let pieChart = null, barChart = null;
+        let currentWordsData = null, currentAmplitudeData = null, currentDuration = 0;
 
         const recordBtn = document.getElementById('recordBtn');
         const stopBtn = document.getElementById('stopBtn');
@@ -223,282 +202,311 @@
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
         const resultContainer = document.getElementById('resultContainer');
-        const chartContainer = document.getElementById('chartContainer');
-        const fullscreenModal = document.getElementById('fullscreenModal');
-        const fullscreenBtn = document.getElementById('fullscreenBtn');
-        const closeFullscreenBtn = document.getElementById('closeFullscreenBtn');
-        const fullscreenChartWrapper = document.getElementById('fullscreenChartWrapper');
+        const combinedChartContainer = document.getElementById('combinedChartContainer');
+        const timelineContainer = document.getElementById('timelineContainer');
+        const combinedModal = document.getElementById('combinedModal');
+        const timelineModal = document.getElementById('timelineModal');
 
-        // -------- Подготовка данных для графика --------
-        function prepareChartData(words) {
-            const labels = [];
-            const data = [];
-            const colors = [];
-            const tooltips = [];
+        // Сглаживание графика (SMA)
+        function smoothData(data, windowSize = 5) {
+            const smoothed = [];
+            for (let i = 0; i < data.length; i++) {
+                const start = Math.max(0, i - Math.floor(windowSize / 2));
+                const end = Math.min(data.length, i + Math.ceil(windowSize / 2));
+                let sum = 0;
+                for (let j = start; j < end; j++) sum += data[j].y;
+                smoothed.push({ x: data[i].x, y: sum / (end - start) });
+            }
+            return smoothed;
+        }
 
+        // Поиск слова
+        function getWordAtTime(time, words) {
+            for (let w of words) {
+                if (time >= w.start && time <= w.end) return w.word;
+            }
+            return null;
+        }
+
+        function prepareBackgroundData(words, totalDuration) {
+            const greenAreas = [], redAreas = [];
             for (let i = 0; i < words.length; i++) {
                 const w = words[i];
-                
+                greenAreas.push([w.start, w.end]);
                 if (i > 0) {
-                    const prevW = words[i - 1];
-                    const gap = w.start - prevW.end;
+                    const gap = w.start - words[i - 1].end;
+                    if (gap >= 0.5) redAreas.push([words[i - 1].end, w.start]);
+                } else if (w.start >= 0.5) {
+                    redAreas.push([0, w.start]);
+                }
+            }
+            if (words.length > 0) {
+                const tailGap = totalDuration - words[words.length - 1].end;
+                if (tailGap >= 0.5) redAreas.push([words[words.length - 1].end, totalDuration]);
+            }
+            return { greenAreas, redAreas };
+        }
+
+        // ОБНОВЛЕНА ФУНКЦИЯ: принимает amplitudeData вместо rmsData
+        function drawCombinedChart(words, amplitudeData, totalDuration, isFullscreen = false) {
+            currentWordsData = words; currentAmplitudeData = amplitudeData; currentDuration = totalDuration;
+
+            const canvasId = isFullscreen ? 'fullscreenCombinedChart' : 'combinedChart';
+            const container = isFullscreen ? document.querySelector('#combinedModal .modal-chart-wrapper') : combinedChartContainer;
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            
+            if (isFullscreen && fullscreenCombinedChart) fullscreenCombinedChart.destroy();
+            if (!isFullscreen && combinedChart) combinedChart.destroy();
+
+            if (isFullscreen) {
+                container.style.height = `calc(100vh - 120px)`;
+            } else {
+                combinedChartContainer.style.width = `${Math.max(totalDuration * 35, 900)}px`;
+            }
+
+            let volumeLine = amplitudeData.map(d => ({ x: d.time, y: d.value }));
+            volumeLine = smoothData(volumeLine, 7);
+
+            const maxRms = Math.max(...amplitudeData.map(d => d.value), 0.1);
+
+            const backgroundPlugin = {
+                id: 'backgroundZones',
+                beforeDatasetsDraw(chart) {
+                    const { ctx, chartArea: { top, bottom }, scales: { x } } = chart;
+                    const { greenAreas, redAreas } = prepareBackgroundData(words, totalDuration);
+                    ctx.save();
                     
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
+                    redAreas.forEach(([start, end]) => {
+                        const xStart = x.getPixelForValue(start);
+                        const xEnd = x.getPixelForValue(end);
+                        ctx.fillRect(xStart, top, xEnd - xStart, bottom - top);
+                    });
+
+                    ctx.fillStyle = 'rgba(16, 185, 129, 0.1)';
+                    greenAreas.forEach(([start, end]) => {
+                        const xStart = x.getPixelForValue(start);
+                        const xEnd = x.getPixelForValue(end);
+                        ctx.fillRect(xStart, top, xEnd - xStart, bottom - top);
+                    });
+                    ctx.restore();
+                }
+            };
+
+            let gradient = ctx.createLinearGradient(0, 0, 0, 300);
+            gradient.addColorStop(0, 'rgba(59, 130, 246, 0.5)');
+            gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
+
+            const chartConfig = {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'Громкость', data: volumeLine, borderColor: '#3b82f6',
+                        backgroundColor: gradient, borderWidth: 2, fill: true, pointRadius: 0, pointHoverRadius: 4, tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#111827', mode: 'index', intersect: false,
+                            callbacks: {
+                                title: (items) => `Время: ${items[0].parsed.x.toFixed(1)} сек`,
+                                label: (context) => {
+                                    const time = context.parsed.x;
+                                    const word = getWordAtTime(time, words);
+                                    return word ? `Слово: "${word}" | Громкость: ${context.parsed.y.toFixed(2)}` : `Громкость: ${context.parsed.y.toFixed(2)}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { type: 'linear', min: 0, max: totalDuration, grid: { color: '#f3f4f6' }, ticks: { color: '#9ca3af', callback: (val) => val + 'с' } },
+                        y: { display: false, min: 0, max: maxRms * 1.1 }
+                    }
+                },
+                plugins: [backgroundPlugin]
+            };
+
+            if (isFullscreen) {
+                chartConfig.options.plugins.zoom = {
+                    pan: { enabled: true, mode: 'x' },
+                    zoom: { wheel: { enabled: true, speed: 0.05 }, mode: 'x' },
+                    limits: { x: { min: 0, max: totalDuration } }
+                };
+            }
+
+            const newChart = new Chart(ctx, chartConfig);
+            if (isFullscreen) fullscreenCombinedChart = newChart;
+            else combinedChart = newChart;
+
+            if (!isFullscreen) {
+                const { redAreas } = prepareBackgroundData(words, totalDuration);
+                const pausesList = redAreas.map(([s, e]) => e - s);
+                const totalPauses = pausesList.reduce((a, b) => a + b, 0);
+                document.getElementById('metricPauses').textContent = totalPauses.toFixed(1);
+                drawPieChart(totalPauses, totalDuration);
+                drawBarChart(pausesList);
+            }
+        }
+
+        function prepareTimelineData(words, totalDuration) {
+            const labels = [], data = [], colors = [], tooltips = [];
+            for (let i = 0; i < words.length; i++) {
+                const w = words[i];
+                if (i > 0) {
+                    const gap = w.start - words[i - 1].end;
                     if (gap >= 0.5) {
-                        labels.push('Пауза');
-                        data.push([prevW.end, w.start]);
-                        colors.push('#ef4444'); 
-                        tooltips.push(`Пауза: ${gap.toFixed(2)} сек`);
+                        labels.push('Пауза'); data.push([words[i - 1].end, w.start]);
+                        colors.push('#ef4444'); tooltips.push(`Пауза: ${gap.toFixed(2)} сек`);
                     }
                 } else if (w.start >= 0.5) {
-                    labels.push('Пауза');
-                    data.push([0, w.start]);
-                    colors.push('#ef4444');
-                    tooltips.push(`Пауза в начале: ${w.start.toFixed(2)} сек`);
+                    labels.push('Пауза'); data.push([0, w.start]);
+                    colors.push('#ef4444'); tooltips.push(`Пауза в начале: ${w.start.toFixed(2)} сек`);
                 }
-
-                labels.push(w.word);
-                data.push([w.start, w.end]);
-                colors.push('#10b981');
+                labels.push(w.word); data.push([w.start, w.end]);
+                colors.push('#10b981'); 
                 tooltips.push(`"${w.word}" (${w.start.toFixed(2)} - ${w.end.toFixed(2)})`);
+            }
+            if (words.length > 0) {
+                const tailGap = totalDuration - words[words.length - 1].end;
+                if (tailGap >= 0.5) {
+                    labels.push('Пауза'); data.push([words[words.length - 1].end, totalDuration]);
+                    colors.push('#ef4444'); tooltips.push(`Пауза в конце: ${tailGap.toFixed(2)} сек`);
+                }
             }
             return { labels, data, colors, tooltips };
         }
 
-        // -------- Отрисовка обычного графика --------
-        function drawChart(words, totalDuration) {
-            currentWordsData = words;
-            currentDuration = totalDuration;
+        function drawTimelineChart(words, totalDuration, isFullscreen = false) {
+            const canvasId = isFullscreen ? 'fullscreenTimeline' : 'timelineChart';
+            const container = isFullscreen ? document.querySelector('#timelineModal .modal-chart-wrapper') : timelineContainer;
+            const ctx = document.getElementById(canvasId).getContext('2d');
 
-            const ctx = document.getElementById('timelineChart').getContext('2d');
-            if (myChart) myChart.destroy();
+            if (isFullscreen && fullscreenTimelineChart) fullscreenTimelineChart.destroy();
+            if (!isFullscreen && timelineChart) timelineChart.destroy();
 
-            const pixelsPerSecond = 35; 
-            const calculatedWidth = Math.max(totalDuration * pixelsPerSecond, 900); 
-            chartContainer.style.width = `${calculatedWidth}px`;
+            const { labels, data, colors, tooltips } = prepareTimelineData(words, totalDuration);
 
-            const { labels, data, colors, tooltips } = prepareChartData(words);
+            if (isFullscreen) {
+                container.style.height = `calc(100vh - 120px)`;
+            } else {
+                timelineContainer.style.width = `${Math.max(totalDuration * 35, 900)}px`;
+                timelineContainer.style.height = `${Math.max(labels.length * 30, 300)}px`;
+            }
 
-            const minRowHeight = 30; 
-            const calculatedHeight = Math.max(labels.length * minRowHeight, 300); 
-            chartContainer.style.height = `${calculatedHeight}px`;
-
-            myChart = new Chart(ctx, {
+            const chartConfig = {
                 type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        data: data,
-                        backgroundColor: colors,
-                        borderWidth: 0,
-                        borderRadius: 3,
-                        barPercentage: 0.85
-                    }]
-                },
+                data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 3, barPercentage: 0.85 }] },
                 options: {
-                    indexAxis: 'y',
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    animation: false, 
+                    indexAxis: 'y', responsive: true, maintainAspectRatio: false, animation: false,
                     plugins: {
                         legend: { display: false },
-                        tooltip: {
-                            backgroundColor: '#111827',
-                            titleFont: { size: 13 },
-                            bodyFont: { size: 13 },
-                            padding: 10,
-                            cornerRadius: 6,
-                            callbacks: {
-                                label: function(context) {
-                                    return tooltips[context.dataIndex];
-                                }
-                            }
-                        }
+                        tooltip: { backgroundColor: '#111827', callbacks: { label: c => tooltips[c.dataIndex] } }
                     },
                     scales: {
-                        x: {
-                            min: 0,
-                            max: totalDuration,
-                            grid: { color: '#f3f4f6', drawBorder: false },
-                            ticks: { color: '#9ca3af', font: { size: 12 } }
-                        },
-                        y: {
-                            display: false
-                        }
+                        x: { min: 0, max: totalDuration, grid: { color: '#f3f4f6' }, ticks: { color: '#9ca3af' } },
+                        y: { display: false }
                     }
                 }
+            };
+
+            if (isFullscreen) {
+                chartConfig.options.plugins.zoom = {
+                    pan: { enabled: true, mode: 'x' },
+                    zoom: { wheel: { enabled: true, speed: 0.05 }, mode: 'x' },
+                    limits: { x: { min: 0, max: totalDuration } }
+                };
+                chartConfig.options.scales.y.barThickness = 25;
+            }
+
+            const newChart = new Chart(ctx, chartConfig);
+            if (isFullscreen) fullscreenTimelineChart = newChart;
+            else timelineChart = newChart;
+        }
+
+        function drawPieChart(totalPauses, totalDuration) {
+            const ctx = document.getElementById('pieChart').getContext('2d');
+            if (pieChart) pieChart.destroy();
+            pieChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: { labels: ['Речь', 'Паузы'], datasets: [{ data: [(totalDuration - totalPauses).toFixed(1), totalPauses.toFixed(1)], backgroundColor: ['#10b981', '#ef4444'], borderWidth: 0 }] },
+                options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } }, tooltip: { backgroundColor: '#111827', callbacks: { label: (c) => ` ${c.label}: ${c.raw} сек` } } } }
             });
         }
 
-        // -------- Открытие полноэкранного графика с зумом --------
-        function openFullscreenChart() {
+        function drawBarChart(pausesList) {
+            const ctx = document.getElementById('barChart').getContext('2d');
+            if (barChart) barChart.destroy();
+            let cat1 = 0, cat2 = 0, cat3 = 0;
+            pausesList.forEach(p => { if (p < 1.0) cat1++; else if (p < 2.0) cat2++; else cat3++; });
+            barChart = new Chart(ctx, {
+                type: 'bar',
+                data: { labels: ['0.5-1с', '1-2с', '>2с'], datasets: [{ data: [cat1, cat2, cat3], backgroundColor: ['#fcd34d', '#f59e0b', '#ef4444'], borderRadius: 4, barPercentage: 0.6 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#111827', callbacks: { label: c => ` ${c.raw} шт.` } } }, scales: { x: { grid: { display: false }, ticks: { color: '#6b7280' } }, y: { beginAtZero: true, ticks: { stepSize: 1, color: '#9ca3af' }, grid: { color: '#f3f4f6' } } } }
+            });
+        }
+
+        function openModal(modalElement) {
+            if (modalElement.requestFullscreen) modalElement.requestFullscreen();
+            else if (modalElement.webkitRequestFullscreen) modalElement.webkitRequestFullscreen();
+            modalElement.classList.add('active');
+        }
+
+        function closeModal(modalElement) {
+            if (document.exitFullscreen) document.exitFullscreen();
+            else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+            modalElement.classList.remove('active');
+        }
+
+        document.getElementById('combinedFullscreenBtn').onclick = () => {
+            if (!currentWordsData || !currentAmplitudeData) return;
+            openModal(combinedModal);
+            drawCombinedChart(currentWordsData, currentAmplitudeData, currentDuration, true);
+        };
+        document.getElementById('closeCombinedFullscreenBtn').onclick = () => closeModal(combinedModal);
+
+        document.getElementById('timelineFullscreenBtn').onclick = () => {
             if (!currentWordsData) return;
+            openModal(timelineModal);
+            drawTimelineChart(currentWordsData, currentDuration, true);
+        };
+        document.getElementById('closeTimelineFullscreenBtn').onclick = () => closeModal(timelineModal);
 
-            // 1. Запрашиваем НАТИВНЫЙ полноэкранный режим у браузера
-            if (fullscreenModal.requestFullscreen) {
-                fullscreenModal.requestFullscreen();
-            } else if (fullscreenModal.webkitRequestFullscreen) { /* Safari */
-                fullscreenModal.webkitRequestFullscreen();
-            } else if (fullscreenModal.msRequestFullscreen) { /* IE11 */
-                fullscreenModal.msRequestFullscreen();
-            }
-
-            // 2. Показываем модалку
-            fullscreenModal.classList.add('active');
-
-            const ctx = document.getElementById('fullscreenChart').getContext('2d');
-            if (fullscreenChart) fullscreenChart.destroy();
-
-            const { labels, data, colors, tooltips } = prepareChartData(currentWordsData);
-
-            // Настраиваем высоту под весь экран
-            fullscreenChartWrapper.style.height = `calc(100vh - 120px)`; // 120px оставляем на шапку и подсказку
-
-            fullscreenChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        data: data,
-                        backgroundColor: colors,
-                        borderWidth: 0,
-                        borderRadius: 3,
-                        barPercentage: 0.85
-                    }]
-                },
-                options: {
-                    indexAxis: 'y',
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    animation: false,
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            backgroundColor: '#111827',
-                            titleFont: { size: 13 },
-                            bodyFont: { size: 13 },
-                            padding: 10,
-                            cornerRadius: 6,
-                            callbacks: {
-                                label: function(context) {
-                                    return tooltips[context.dataIndex];
-                                }
-                            }
-                        },
-                        zoom: {
-                            pan: {
-                                enabled: true,
-                                mode: 'x', // Только по горизонтали
-                            },
-                            zoom: {
-                                wheel: {
-                                    enabled: true,
-                                    speed: 0.05,
-                                },
-                                pinch: {
-                                    enabled: true
-                                },
-                                mode: 'x', // Только по оси X, чтобы не плющило Y
-                            },
-                            limits: {
-                                x: { min: 0, max: currentDuration }
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            min: 0,
-                            max: currentDuration,
-                            grid: { color: '#f3f4f6', drawBorder: false },
-                            ticks: { color: '#9ca3af', font: { size: 12 } }
-                        },
-                        y: {
-                            display: false,
-                            // Фиксируем высоту строки, чтобы при зуме по X 
-                            // блоки не становились микроскопическими
-                            barThickness: 25 
-                        }
-                    }
-                }
-            });
-        }
-
-        function closeFullscreenChart() {
-            // Выходим из нативного полноэкранного режима
-            if (document.exitFullscreen) {
-                document.exitFullscreen();
-            } else if (document.webkitExitFullscreen) { /* Safari */
-                document.webkitExitFullscreen();
-            } else if (document.msExitFullscreen) { /* IE11 */
-                document.msExitFullscreen();
-            }
-
-            fullscreenModal.classList.remove('active');
-            if (fullscreenChart) {
-                fullscreenChart.destroy();
-                fullscreenChart = null;
-            }
-        }
-
-        fullscreenBtn.onclick = openFullscreenChart;
-        closeFullscreenBtn.onclick = closeFullscreenChart;
-
-        // Закрытие по Esc (и по выходу из нативного фуллскрина)
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && fullscreenModal.classList.contains('active')) {
-                closeFullscreenChart();
-            }
+        document.addEventListener('keydown', (e) => { 
+            if (e.key === 'Escape') { 
+                if (combinedModal.classList.contains('active')) closeModal(combinedModal); 
+                if (timelineModal.classList.contains('active')) closeModal(timelineModal); 
+            } 
         });
 
-        // Слушаем событие выхода из нативного фуллскрина (если юзер нажал F11 или Esc в браузере)
-        document.addEventListener('fullscreenchange', () => {
-            if (!document.fullscreenElement && fullscreenModal.classList.contains('active')) {
-                closeFullscreenChart();
-            }
-        });
-
-        // -------- Отправка на сервер --------
         async function sendAudio(blob, filename) {
             statusDiv.textContent = "Отправка на сервер...";
             statusDiv.classList.remove('recording');
             resultContainer.style.display = "none";
             errorDiv.textContent = "";
-
             const formData = new FormData();
             formData.append('file', blob, filename);
-
             try {
-                const response = await fetch('http://localhost:8000/transcribe', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.detail || 'Ошибка сервера');
-                }
-
+                const response = await fetch('http://localhost:8000/transcribe', { method: 'POST', body: formData });
+                if (!response.ok) throw new Error((await response.json()).detail || 'Ошибка сервера');
                 const data = await response.json();
                 const f = data.fluency || {};
                 const t = data.timings || {};
-
+                
                 document.getElementById('metricWpm').textContent = f.words_per_minute ?? '-';
-                document.getElementById('metricPauses').textContent = f.pauses_total_s ?? '-';
-
-                resultDiv.textContent =
-                    `${data.text}\n\n` +
-                    `--- Детали ---\n` +
-                    `Слов: ${f.words_count ?? '?'}\n` +
-                    `Ср. пауза: ${f.avg_pause_s ?? '?'} с\n` +
-                    `Аудио: ${data.duration} сек\n` +
-                    `Время обработки: ${t.total_s ?? '?'} с`;
-
-                if (data.words_data && data.words_data.length > 0) {
-                    drawChart(data.words_data, data.duration);
+                
+                resultDiv.textContent = `${data.text}\n\n--- Детали ---\nСлов: ${f.words_count ?? '?'}\nСр. пауза: ${f.avg_pause_s ?? '?'} с\nАудио: ${data.duration} сек\nВремя обработки: ${t.total_s ?? '?'} с`;
+                
+                // ОБНОВЛЕНО: используем amplitude_data вместо rms_data
+                if (data.words_data && data.amplitude_data) {
+                    drawCombinedChart(data.words_data, data.amplitude_data, data.duration, false);
+                    drawTimelineChart(data.words_data, data.duration, false);
                 }
-
+                
                 resultContainer.style.display = "block";
                 statusDiv.textContent = "Готово";
-
             } catch (error) {
                 errorDiv.textContent = "Ошибка: " + error.message;
                 statusDiv.textContent = "";
@@ -510,31 +518,21 @@
                 stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 mediaRecorder = new MediaRecorder(stream);
                 audioChunks = [];
-
-                mediaRecorder.ondataavailable = event => {
-                    if (event.data.size > 0) audioChunks.push(event.data);
-                };
-
+                mediaRecorder.ondataavailable = event => { if (event.data.size > 0) audioChunks.push(event.data); };
                 mediaRecorder.onstop = async () => {
                     stream.getTracks().forEach(track => track.stop());
                     stopBtn.disabled = true;
-
                     const mime = mediaRecorder.mimeType || 'audio/webm';
-                    let ext = 'webm';
-                    if (mime.includes('mp4')) ext = 'mp4';
-                    
-                    const audioBlob = new Blob(audioChunks, { type: mime });
-                    await sendAudio(audioBlob, `recording.${ext}`);
+                    const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+                    await sendAudio(new Blob(audioChunks, { type: mime }), `recording.${ext}`);
                     recordBtn.disabled = false;
                 };
-
                 mediaRecorder.start();
                 recordBtn.disabled = true;
                 stopBtn.disabled = false;
                 statusDiv.textContent = "🔴 Идёт запись...";
                 statusDiv.classList.add('recording');
                 errorDiv.textContent = "";
-
             } catch (error) {
                 errorDiv.textContent = "Не удалось получить доступ к микрофону: " + error.message;
             }
@@ -549,34 +547,13 @@
         };
 
         dropZone.onclick = () => fileInput.click();
-
-        fileInput.onchange = () => {
-            if (fileInput.files.length > 0) handleFile(fileInput.files[0]);
-        };
-
-        ['dragenter', 'dragover'].forEach(evt => {
-            dropZone.addEventListener(evt, e => {
-                e.preventDefault(); e.stopPropagation();
-                dropZone.classList.add('dragover');
-            });
-        });
-
-        ['dragleave', 'drop'].forEach(evt => {
-            dropZone.addEventListener(evt, e => {
-                e.preventDefault(); e.stopPropagation();
-                dropZone.classList.remove('dragover');
-            });
-        });
-
-        dropZone.addEventListener('drop', e => {
-            if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
-        });
+        fileInput.onchange = () => { if (fileInput.files.length > 0) handleFile(fileInput.files[0]); };
+        ['dragenter', 'dragover'].forEach(evt => dropZone.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); dropZone.classList.add('dragover'); }));
+        ['dragleave', 'drop'].forEach(evt => dropZone.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); dropZone.classList.remove('dragover'); }));
+        dropZone.addEventListener('drop', e => { if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]); });
 
         async function handleFile(file) {
-            if (!file.type.startsWith('audio/')) {
-                errorDiv.textContent = "Это не аудиофайл: " + file.name;
-                return;
-            }
+            if (!file.type.startsWith('audio/')) { errorDiv.textContent = "Это не аудиофайл"; return; }
             dropZone.classList.add('loading');
             dropZone.querySelector('div:nth-child(2)').textContent = "⏳ Обработка: " + file.name;
             await sendAudio(file, file.name);
