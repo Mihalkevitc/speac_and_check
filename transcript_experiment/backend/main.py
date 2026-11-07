@@ -14,17 +14,31 @@ from faster_whisper import WhisperModel
 import numpy as np
 import librosa
 
+import os
+
+# Ограничиваем потоки для PyTorch, чтобы он не дрался с Whisper
+os.environ["OMP_NUM_THREADS"] = "9"
+os.environ["MKL_NUM_THREADS"] = "9" # Intel MKL тоже читает эту переменную
+
+import torch
+torch.set_num_threads(9) # Ключевая строка
+
+# ... дальше ваши остальные импорты, включая openpronounce
+
+# Импортируем OpenPronounce
+from openpronounce import load_audio, compare_audio_with_text
+
 # ============================================================
 # НАСТРОЙКИ
 # ============================================================
 MAX_CONCURRENT_TRANSCRIBES = 2
 cpu_threads = 3
 
-print("Загрузка модели base...")
+print("Загрузка модели Whisper base...")
 model = WhisperModel(
     "base", device="cpu", compute_type="int8", cpu_threads=cpu_threads, num_workers=1,
 )
-print("Модель готова!")
+print("Модель Whisper готова!")
 
 transcribe_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TRANSCRIBES)
 queue_size = 0
@@ -111,7 +125,6 @@ def analyze_audio_energy(file_path):
     finally:
         if y is not None: del y
 
-# Маппинг слов на амплитуду
 def map_words_to_energy(words_data, times, rms):
     if len(times) == 0 or len(rms) == 0:
         return words_data
@@ -133,17 +146,19 @@ def _sync_transcribe(save_path):
     return list(segments), info
 
 def _sync_process_all(save_path):
+    # 1. Whisper транскрибация
     segments_list, info = _sync_transcribe(save_path)
+    
+    # 2. Анализ амплитуды
     rms_data, times, rms_raw = analyze_audio_energy(save_path)
     
-    # Собираем слова
+    # 3. Собираем слова
     words_data = []
     for seg in segments_list:
         if seg.words:
             for w in seg.words:
                 words_data.append({"word": w.word.strip(), "start": round(w.start, 2), "end": round(w.end, 2)})
 
-    # Мапим амплитуду на слова
     words_data = map_words_to_energy(words_data, times, rms_raw)
     
     if rms_raw is not None: del rms_raw
@@ -151,12 +166,59 @@ def _sync_process_all(save_path):
     
     return segments_list, info, rms_data, words_data
 
+# ============================================================
+# ФОНЕМНЫЙ АНАЛИЗ (OpenPronounce)
+# ============================================================
+def analyze_pronunciation(file_path, reference_text):
+    """Запускает OpenPronounce для оценки произношения."""
+    try:
+        # OpenPronounce использует load_audio для чтения (поддерживает любые форматы через ffmpeg)
+        sound = load_audio(file_path)
+        # Сравниваем аудио с эталонным текстом
+        result = compare_audio_with_text(sound, reference_text)
+        
+        # Извлекаем только нужные нам поля, чтобы не перегружать ответ
+        pronunciation_result = {
+            "score": round(result.get("score", 0), 1),
+            "transcription": result.get("transcribe", ""),
+            "errors": []
+        }
+        
+        # Обрабатываем ошибки
+        differences = result.get("differences", {})
+        for err in differences.get("errors", []):
+            pronunciation_result["errors"].append({
+                "word": err.get("word"),
+                "expected": err.get("expected"),
+                "actual": err.get("actual"),
+                "confidence": round(err.get("confidence", 0) * 100, 1) if err.get("confidence") else None
+            })
+            
+        return pronunciation_result
+    except Exception as e:
+        print(f"[PRONUNCIATION ERROR] {e}")
+        return {"score": 0, "transcription": "", "errors": [], "error": str(e)}
+
+def _sync_process_all_with_pronunciation(save_path, reference_text=None):
+    # 1. Whisper + амплитуда
+    segments_list, info, rms_data, words_data = _sync_process_all(save_path)
+    
+    # 2. Если передан эталонный текст — запускаем OpenPronounce
+    pronunciation_data = None
+    if reference_text:
+        pronunciation_data = analyze_pronunciation(save_path, reference_text)
+    
+    return segments_list, info, rms_data, words_data, pronunciation_data
+
 @app.post("/transcribe")
 async def transcribe(request: Request, file: UploadFile = File(...)):
     global queue_size
     if not file.content_type or not file.content_type.startswith("audio/"):
         raise HTTPException(status_code=400, detail="Файл должен быть аудио")
 
+    # Получаем эталонный текст из query-параметра (если есть)
+    reference_text = request.query_params.get("reference_text")
+    
     t_start = time.perf_counter()
     ext = os.path.splitext(file.filename)[1] or ".webm"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -189,7 +251,9 @@ async def transcribe(request: Request, file: UploadFile = File(...)):
                 raise HTTPException(status_code=499, detail="Клиент отключился")
 
             print(f"[START] {filename} | processing...")
-            segments_list, info, rms_data, words_data = await run_in_threadpool(_sync_process_all, save_path)
+            segments_list, info, rms_data, words_data, pronunciation_data = await run_in_threadpool(
+                _sync_process_all_with_pronunciation, save_path, reference_text
+            )
 
             text = " ".join(s.text for s in segments_list).strip()
             fluency = analyze_fluency(segments_list, info.duration)
@@ -197,14 +261,20 @@ async def transcribe(request: Request, file: UploadFile = File(...)):
             t_done = time.perf_counter()
             total_time = t_done - t_start
 
-            return {
+            response = {
                 "text": text,
                 "duration": round(info.duration, 2),
                 "fluency": fluency,
                 "words_data": words_data,
-                "amplitude_data": rms_data, # Переименовали rms_data в amplitude_data
+                "amplitude_data": rms_data,
                 "timings": {"save_ms": round(save_time * 1000), "transcribe_s": round(t_done - t_saved, 2), "total_s": round(total_time, 2)},
             }
+            
+            # Добавляем фонемный анализ, если он был выполнен
+            if pronunciation_data:
+                response["pronunciation"] = pronunciation_data
+            
+            return response
     except HTTPException:
         raise
     except Exception as e:
