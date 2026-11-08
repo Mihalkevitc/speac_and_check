@@ -16,7 +16,7 @@
         h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.5px; margin-bottom: 8px; }
         h3 { font-size: 18px; font-weight: 600; margin-bottom: 12px; }
         p { color: #6b7280; font-size: 15px; margin-bottom: 24px; }
-        .controls { display: flex; gap: 12px; margin-bottom: 24px; }
+        .controls { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
         button { 
             padding: 10px 20px; font-size: 14px; font-weight: 500; cursor: pointer; 
             border: 1px solid transparent; border-radius: 8px; transition: all 0.2s ease;
@@ -59,7 +59,7 @@
 
         #result { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 15px; color: #374151; line-height: 1.6; max-height: 220px; overflow-y: auto; padding-right: 10px; }
         
-        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background-color: #d1d5db; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background-color: #9ca3af; }
@@ -80,6 +80,10 @@
         .btn-close:hover { background: #e5e7eb; }
         .zoom-hint { font-size: 12px; color: #9ca3af; margin-top: 8px; text-align: center; flex-shrink: 0; }
         svg { width: 20px; height: 20px; fill: currentColor; }
+        
+        .pronunciation-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; font-family: monospace; font-size: 14px; }
+        .pronunciation-error .word { font-weight: 600; color: #dc2626; }
+        
         @media (max-width: 600px) { .grid, .charts-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
@@ -99,6 +103,13 @@
         <input type="file" id="fileInput" accept="audio/*" style="display: none;">
     </div>
 
+    <!-- Блок для эталонного текста (для фонемного анализа) -->
+    <div class="card">
+        <h3>Эталонный текст (для анализа произношения)</h3>
+        <p style="font-size: 13px; color: #6b7280; margin-bottom: 12px;">Введите текст, который студент должен был произнести. Оставьте пустым, чтобы пропустить фонемный анализ.</p>
+        <input type="text" id="referenceText" placeholder="Например: Hello, how are you?" style="width: 100%; padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 15px;">
+    </div>
+
     <div id="status"></div>
     <div id="error"></div>
 
@@ -116,8 +127,19 @@
             </div>
         </div>
 
+        <!-- Блок фонемного анализа (показывается, если есть данные) -->
+        <div id="pronunciationContainer" style="display: none;">
+            <div class="card" style="border-color: #fecaca; background: #fef2f2;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h3 style="margin: 0; color: #dc2626;">Оценка произношения</h3>
+                    <div class="metric" id="pronunciationScore" style="color: #dc2626;">-</div>
+                </div>
+                <div id="pronunciationErrors"></div>
+            </div>
+        </div>
+
         <div class="card">
-            <h3>Транскрипт</h3>
+            <h3>Транскрипт (Whisper)</h3>
             <div id="result"></div>
         </div>
 
@@ -206,6 +228,10 @@
         const timelineContainer = document.getElementById('timelineContainer');
         const combinedModal = document.getElementById('combinedModal');
         const timelineModal = document.getElementById('timelineModal');
+        const referenceTextInput = document.getElementById('referenceText');
+        const pronunciationContainer = document.getElementById('pronunciationContainer');
+        const pronunciationScore = document.getElementById('pronunciationScore');
+        const pronunciationErrors = document.getElementById('pronunciationErrors');
 
         // Сглаживание графика (SMA)
         function smoothData(data, windowSize = 5) {
@@ -220,7 +246,6 @@
             return smoothed;
         }
 
-        // Поиск слова
         function getWordAtTime(time, words) {
             for (let w of words) {
                 if (time >= w.start && time <= w.end) return w.word;
@@ -247,7 +272,6 @@
             return { greenAreas, redAreas };
         }
 
-        // ОБНОВЛЕНА ФУНКЦИЯ: принимает amplitudeData вместо rmsData
         function drawCombinedChart(words, amplitudeData, totalDuration, isFullscreen = false) {
             currentWordsData = words; currentAmplitudeData = amplitudeData; currentDuration = totalDuration;
 
@@ -485,11 +509,21 @@
             statusDiv.textContent = "Отправка на сервер...";
             statusDiv.classList.remove('recording');
             resultContainer.style.display = "none";
+            pronunciationContainer.style.display = "none";
             errorDiv.textContent = "";
+            
             const formData = new FormData();
             formData.append('file', blob, filename);
+            
+            // Добавляем эталонный текст в query-параметр, если он введен
+            const referenceText = referenceTextInput.value.trim();
+            let url = 'http://localhost:8000/transcribe';
+            if (referenceText) {
+                url += `?reference_text=${encodeURIComponent(referenceText)}`;
+            }
+            
             try {
-                const response = await fetch('http://localhost:8000/transcribe', { method: 'POST', body: formData });
+                const response = await fetch(url, { method: 'POST', body: formData });
                 if (!response.ok) throw new Error((await response.json()).detail || 'Ошибка сервера');
                 const data = await response.json();
                 const f = data.fluency || {};
@@ -499,7 +533,25 @@
                 
                 resultDiv.textContent = `${data.text}\n\n--- Детали ---\nСлов: ${f.words_count ?? '?'}\nСр. пауза: ${f.avg_pause_s ?? '?'} с\nАудио: ${data.duration} сек\nВремя обработки: ${t.total_s ?? '?'} с`;
                 
-                // ОБНОВЛЕНО: используем amplitude_data вместо rms_data
+                // Отображаем фонемный анализ, если он есть
+                if (data.pronunciation) {
+                    const p = data.pronunciation;
+                    pronunciationScore.textContent = p.score ?? '-';
+                    
+                    if (p.errors && p.errors.length > 0) {
+                        pronunciationErrors.innerHTML = p.errors.map(err => {
+                            const actual = err.actual ? `услышано /${err.actual}/` : '(пропущено)';
+                            return `<div class="pronunciation-error">
+                                <span class="word">${err.word}</span>: ожидалось /${err.expected}/, ${actual} 
+                                ${err.confidence ? `(уверенность ${err.confidence}%)` : ''}
+                            </div>`;
+                        }).join('');
+                    } else {
+                        pronunciationErrors.innerHTML = '<p style="color: #16a34a;">Ошибок произношения не найдено!</p>';
+                    }
+                    pronunciationContainer.style.display = "block";
+                }
+                
                 if (data.words_data && data.amplitude_data) {
                     drawCombinedChart(data.words_data, data.amplitude_data, data.duration, false);
                     drawTimelineChart(data.words_data, data.duration, false);
